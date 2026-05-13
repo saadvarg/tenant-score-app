@@ -9,6 +9,8 @@ const allowedEmploymentStatuses = new Set([
   'unemployed',
 ]);
 
+const allowedApplicationStatuses = new Set(['pending', 'approved', 'rejected']);
+
 function parseTenantPayload(body) {
   const tenant = {
     full_name: body.full_name?.trim(),
@@ -60,9 +62,17 @@ function tenantQuery() {
     SELECT id, landlord_id, full_name, email, phone, monthly_income, rent_amount,
            employment_status, credit_score, eviction_count, late_payments,
            criminal_record, notes, risk_score, risk_level, recommendation,
-           score_factors, created_at, updated_at
+           application_status, score_factors, created_at, updated_at
     FROM tenants
   `;
+}
+
+async function logTenantEvent(tenantId, actorId, eventType, message) {
+  await pool.query(
+    `INSERT INTO tenant_events (tenant_id, actor_id, event_type, message)
+     VALUES ($1, $2, $3, $4)`,
+    [tenantId, actorId, eventType, message]
+  );
 }
 
 export async function listTenants(req, res) {
@@ -94,6 +104,39 @@ export async function getTenant(req, res) {
   } catch (error) {
     console.error('Get tenant error:', error);
     return res.status(500).json({ message: 'Unable to load tenant.' });
+  }
+}
+
+export async function listTenantEvents(req, res) {
+  try {
+    const tenantResult = await pool.query(
+      'SELECT id FROM tenants WHERE id = $1 AND landlord_id = $2',
+      [req.params.id, req.user.id]
+    );
+
+    if (tenantResult.rows.length === 0) {
+      return res.status(404).json({ message: 'Tenant not found.' });
+    }
+
+    const result = await pool.query(
+      `SELECT tenant_events.id,
+              tenant_events.tenant_id,
+              tenant_events.actor_id,
+              users.email AS actor_email,
+              tenant_events.event_type,
+              tenant_events.message,
+              tenant_events.created_at
+       FROM tenant_events
+       JOIN users ON users.id = tenant_events.actor_id
+       WHERE tenant_events.tenant_id = $1
+       ORDER BY tenant_events.created_at DESC`,
+      [req.params.id]
+    );
+
+    return res.json({ events: result.rows });
+  } catch (error) {
+    console.error('List tenant events error:', error);
+    return res.status(500).json({ message: 'Unable to load tenant activity.' });
   }
 }
 
@@ -133,6 +176,8 @@ export async function createTenant(req, res) {
         JSON.stringify(score.score_factors),
       ]
     );
+
+    await logTenantEvent(result.rows[0].id, req.user.id, 'created', 'Tenant application created.');
 
     return res.status(201).json({ tenant: result.rows[0] });
   } catch (error) {
@@ -195,10 +240,50 @@ export async function updateTenant(req, res) {
       return res.status(404).json({ message: 'Tenant not found.' });
     }
 
+    await logTenantEvent(result.rows[0].id, req.user.id, 'updated', 'Tenant application details updated.');
+
     return res.json({ tenant: result.rows[0] });
   } catch (error) {
     console.error('Update tenant error:', error);
     return res.status(500).json({ message: 'Unable to update tenant.' });
+  }
+}
+
+export async function updateTenantStatus(req, res) {
+  try {
+    const { status, note } = req.body;
+    const decisionNote = typeof note === 'string' ? note.trim() : '';
+
+    if (!allowedApplicationStatuses.has(status)) {
+      return res.status(400).json({ message: 'Application status is invalid.' });
+    }
+
+    const result = await pool.query(
+      `UPDATE tenants
+       SET application_status = $1,
+           updated_at = CURRENT_TIMESTAMP
+       WHERE id = $2 AND landlord_id = $3
+       RETURNING *`,
+      [status, req.params.id, req.user.id]
+    );
+
+    if (result.rows.length === 0) {
+      return res.status(404).json({ message: 'Tenant not found.' });
+    }
+
+    await logTenantEvent(
+      result.rows[0].id,
+      req.user.id,
+      'status_changed',
+      decisionNote
+        ? `Application status changed to ${status}. Note: ${decisionNote}`
+        : `Application status changed to ${status}.`
+    );
+
+    return res.json({ tenant: result.rows[0] });
+  } catch (error) {
+    console.error('Update tenant status error:', error);
+    return res.status(500).json({ message: 'Unable to update tenant status.' });
   }
 }
 

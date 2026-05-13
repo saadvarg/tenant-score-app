@@ -20,6 +20,7 @@ async function initDb() {
       risk_score INTEGER NOT NULL,
       risk_level VARCHAR(20) NOT NULL,
       recommendation VARCHAR(20) NOT NULL DEFAULT 'review',
+      application_status VARCHAR(20) NOT NULL DEFAULT 'pending',
       score_factors JSONB NOT NULL DEFAULT '[]'::jsonb,
       created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
       updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
@@ -27,10 +28,26 @@ async function initDb() {
   `);
 
   await pool.query("ALTER TABLE tenants ADD COLUMN IF NOT EXISTS recommendation VARCHAR(20) NOT NULL DEFAULT 'review'");
+  await pool.query("ALTER TABLE tenants ADD COLUMN IF NOT EXISTS application_status VARCHAR(20) NOT NULL DEFAULT 'pending'");
   await pool.query("ALTER TABLE tenants ADD COLUMN IF NOT EXISTS score_factors JSONB NOT NULL DEFAULT '[]'::jsonb");
 
   await pool.query('CREATE INDEX IF NOT EXISTS idx_tenants_landlord_id ON tenants(landlord_id)');
   await pool.query('CREATE INDEX IF NOT EXISTS idx_tenants_risk_level ON tenants(risk_level)');
+  await pool.query('CREATE INDEX IF NOT EXISTS idx_tenants_application_status ON tenants(application_status)');
+
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS tenant_events (
+      id SERIAL PRIMARY KEY,
+      tenant_id INTEGER NOT NULL REFERENCES tenants(id) ON DELETE CASCADE,
+      actor_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      event_type VARCHAR(40) NOT NULL,
+      message TEXT NOT NULL,
+      created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    )
+  `);
+
+  await pool.query('CREATE INDEX IF NOT EXISTS idx_tenant_events_tenant_id ON tenant_events(tenant_id)');
+  await pool.query('CREATE INDEX IF NOT EXISTS idx_tenant_events_created_at ON tenant_events(created_at)');
 
   console.log('Database initialized.');
 }
