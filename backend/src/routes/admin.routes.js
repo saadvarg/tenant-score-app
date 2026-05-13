@@ -3,6 +3,7 @@ import {
   deleteAnyTenant,
   getAdminStats,
   listAllTenants,
+  listTenantEvents,
   listUsers,
 } from '../controllers/admin.controller.js';
 import authMiddleware from '../middleware/auth.middleware.js';
@@ -16,6 +17,7 @@ router.use(requireRole('admin'));
 router.get('/stats', getAdminStats);
 router.get('/users', listUsers);
 router.get('/tenants', listAllTenants);
+router.get('/tenants/:id/events', listTenantEvents);
 router.delete('/tenants/:id', deleteAnyTenant);
 
 export default router;

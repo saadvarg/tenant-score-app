@@ -111,11 +111,16 @@ struct AdminDashboardView: View {
             .pickerStyle(.segmented)
 
             ForEach(viewModel.filteredTenants) { tenant in
-                AdminTenantRow(tenant: tenant) {
-                    Task {
-                        await viewModel.deleteTenant(tenant)
+                NavigationLink {
+                    AdminTenantDetailView(tenant: tenant, viewModel: viewModel)
+                } label: {
+                    AdminTenantRow(tenant: tenant) {
+                        Task {
+                            await viewModel.deleteTenant(tenant)
+                        }
                     }
                 }
+                .buttonStyle(.plain)
             }
         }
     }
@@ -235,5 +240,119 @@ private struct AdminUserRow: View {
         .padding(14)
         .background(.background)
         .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+    }
+}
+
+private struct AdminTenantDetailView: View {
+    let tenant: Tenant
+    @ObservedObject var viewModel: AdminViewModel
+    @Environment(\.dismiss) private var dismiss
+    @State private var events: [TenantEvent] = []
+    @State private var isConfirmingDelete = false
+
+    var body: some View {
+        ScrollView {
+            VStack(alignment: .leading, spacing: 18) {
+                VStack(alignment: .leading, spacing: 10) {
+                    HStack(alignment: .firstTextBaseline) {
+                        Text("\(tenant.riskScore)")
+                            .font(.system(size: 56, weight: .bold))
+                            .foregroundStyle(tenant.riskLevel.color)
+
+                        Text("/ 100")
+                            .font(.title3.weight(.semibold))
+                            .foregroundStyle(.secondary)
+
+                        Spacer()
+
+                        Text(tenant.applicationStatus.title)
+                            .font(.subheadline.weight(.bold))
+                            .foregroundStyle(tenant.applicationStatus.color)
+                    }
+
+                    Text("\(tenant.riskLevel.title) risk · \(tenant.recommendation.title)")
+                        .font(.headline)
+                        .foregroundStyle(.secondary)
+
+                    ProgressView(value: Double(tenant.riskScore), total: 100)
+                        .tint(tenant.riskLevel.color)
+                }
+                .padding(18)
+                .background(.background)
+                .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+
+                DetailCard(title: "Landlord") {
+                    Text(tenant.landlordEmail ?? "Unknown landlord")
+                        .foregroundStyle(.secondary)
+                }
+
+                DetailCard(title: "Applicant") {
+                    AdminDetailLine(label: "Email", value: tenant.email ?? "Not provided")
+                    AdminDetailLine(label: "Phone", value: tenant.phone ?? "Not provided")
+                    AdminDetailLine(label: "Employment", value: tenant.employmentStatus.title)
+                }
+
+                DetailCard(title: "Activity") {
+                    if events.isEmpty {
+                        Text("No activity yet.")
+                            .font(.subheadline)
+                            .foregroundStyle(.secondary)
+                    } else {
+                        VStack(alignment: .leading, spacing: 12) {
+                            ForEach(events) { event in
+                                VStack(alignment: .leading, spacing: 3) {
+                                    Text(event.message)
+                                        .font(.subheadline.weight(.medium))
+                                    Text(event.actorEmail)
+                                        .font(.caption)
+                                        .foregroundStyle(.secondary)
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+            .padding(18)
+        }
+        .background(Color(.systemGroupedBackground))
+        .navigationTitle(tenant.fullName)
+        .navigationBarTitleDisplayMode(.inline)
+        .toolbar {
+            ToolbarItem(placement: .topBarTrailing) {
+                Button(role: .destructive) {
+                    isConfirmingDelete = true
+                } label: {
+                    Image(systemName: "trash")
+                }
+            }
+        }
+        .confirmationDialog("Delete tenant application?", isPresented: $isConfirmingDelete, titleVisibility: .visible) {
+            Button("Delete", role: .destructive) {
+                Task {
+                    await viewModel.deleteTenant(tenant)
+                    dismiss()
+                }
+            }
+        }
+        .task {
+            events = await viewModel.loadEvents(for: tenant)
+        }
+    }
+}
+
+private struct AdminDetailLine: View {
+    let label: String
+    let value: String
+
+    var body: some View {
+        HStack {
+            Text(label)
+                .foregroundStyle(.secondary)
+            Spacer()
+            Text(value)
+                .fontWeight(.medium)
+                .multilineTextAlignment(.trailing)
+        }
+        .font(.subheadline)
     }
 }

@@ -102,6 +102,36 @@ export async function listAllTenants(req, res) {
   }
 }
 
+export async function listTenantEvents(req, res) {
+  try {
+    const tenantResult = await pool.query('SELECT id FROM tenants WHERE id = $1', [req.params.id]);
+
+    if (tenantResult.rows.length === 0) {
+      return res.status(404).json({ message: 'Tenant not found.' });
+    }
+
+    const result = await pool.query(
+      `SELECT tenant_events.id,
+              tenant_events.tenant_id,
+              tenant_events.actor_id,
+              users.email AS actor_email,
+              tenant_events.event_type,
+              tenant_events.message,
+              tenant_events.created_at
+       FROM tenant_events
+       JOIN users ON users.id = tenant_events.actor_id
+       WHERE tenant_events.tenant_id = $1
+       ORDER BY tenant_events.created_at DESC`,
+      [req.params.id]
+    );
+
+    return res.json({ events: result.rows });
+  } catch (error) {
+    console.error('Admin tenant events error:', error);
+    return res.status(500).json({ message: 'Unable to load tenant activity.' });
+  }
+}
+
 export async function deleteAnyTenant(req, res) {
   try {
     const result = await pool.query('DELETE FROM tenants WHERE id = $1 RETURNING id', [req.params.id]);

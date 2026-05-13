@@ -87,4 +87,13 @@ final class AdminViewModel: ObservableObject {
             errorMessage = error.localizedDescription
         }
     }
+
+    func loadEvents(for tenant: Tenant) async -> [TenantEvent] {
+        do {
+            return try await adminService.listTenantEvents(id: tenant.id)
+        } catch {
+            errorMessage = error.localizedDescription
+            return []
+        }
+    }
 }

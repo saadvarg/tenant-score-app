@@ -4,6 +4,7 @@ protocol AdminServicing {
     func getStats() async throws -> AdminStats
     func listUsers() async throws -> [AdminUser]
     func listTenants() async throws -> [Tenant]
+    func listTenantEvents(id: Int) async throws -> [TenantEvent]
     func deleteTenant(id: Int) async throws
 }
 
@@ -27,6 +28,11 @@ final class AdminService: AdminServicing {
     func listTenants() async throws -> [Tenant] {
         let response: TenantsResponse = try await apiClient.get("/admin/tenants")
         return response.tenants
+    }
+
+    func listTenantEvents(id: Int) async throws -> [TenantEvent] {
+        let response: TenantEventsResponse = try await apiClient.get("/admin/tenants/\(id)/events")
+        return response.events
     }
 
     func deleteTenant(id: Int) async throws {
